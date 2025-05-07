@@ -38,10 +38,10 @@ const Home = () => {
             />
           )}
         </div>
-        <div
-          className="border-l-2 border-gray-600 h-full w-20/122 flex items-center justify-center cursor-pointer"
-          onClick={handleSelectFile}
-        >
+        <div className="h-full w-0.5 flex items-center">
+          <div className="h-3/5 w-full bg-gray-400"></div>
+        </div>
+        <div className="h-full w-20/122 flex items-center justify-center cursor-pointer" onClick={handleSelectFile}>
           选择文件
         </div>
       </div>
