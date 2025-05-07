@@ -7,7 +7,6 @@ import { TrayIcon, TrayIconEvent, TrayIconOptions } from "@tauri-apps/api/tray"
 const TRAY_ID = "videoframe.tray"
 
 async function createTray(t: TFunction<"translation", undefined>) {
-  console.log(TRAY_ID)
   const tray = await TrayIcon.getById(TRAY_ID)
   if (tray) {
     return tray
