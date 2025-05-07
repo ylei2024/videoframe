@@ -41,8 +41,13 @@ const Home = () => {
         <div className="h-full w-0.5 flex items-center">
           <div className="h-3/5 w-full bg-gray-400"></div>
         </div>
-        <div className="h-full w-20/122 flex items-center justify-center cursor-pointer" onClick={handleSelectFile}>
-          选择文件
+        <div className="h-full w-20/122 flex items-center justify-center">
+          <div
+            className="m-1 rounded-lg  h-9/10 w-full flex items-center justify-center cursor-pointer hover:bg-[rgb(71,70,70)]"
+            onClick={handleSelectFile}
+          >
+            选择视频
+          </div>
         </div>
       </div>
     </div>
