@@ -40,19 +40,19 @@ const Home = () => {
     setState(State.Run)
   }
   return (
-    <div className="flex flex-col gap-3">
+    <div className="font-sans flex flex-col gap-3">
       <div className="flex items-center justify-center w-full text-gray-100 text-sm">
-        <div className="rounded-lg h-9 w-122 bg-[rgb(41,40,40)] flex items-start">
+        <div className="rounded-lg h-9 w-124 bg-[rgb(41,40,40)] flex items-start">
           <input
-            placeholder="视频路径"
+            placeholder={t("home.video_path")}
             value={filepath}
             onChange={(e) => {
               setFilePath(e.target.value)
             }}
-            className="pl-2 h-full w-100/122 flex items-center focus:outline-none focus:ring-0"
+            className="pl-2 h-full w-100/124 flex items-center focus:outline-none focus:ring-0"
           />
           <div
-            className="h-full w-2/122 flex justify-center items-center px-4 cursor-pointer"
+            className="h-full w-2/124 flex justify-center items-center px-4 cursor-pointer"
             onClick={() => {
               setFilePath("")
             }}
@@ -68,18 +68,34 @@ const Home = () => {
           <div className="h-full w-0.5 flex items-center">
             <div className="h-3/5 w-full bg-gray-400"></div>
           </div>
-          <div className="h-full w-20/122 flex items-center justify-center">
-            <div
-              className="m-1 rounded-lg h-9/10 w-full flex items-center justify-center cursor-pointer hover:bg-[rgb(71,70,70)]"
+          <div className="h-full w-22/124 flex items-center justify-center">
+            <Button
               onClick={handleSelectFile}
+              sx={{
+                color: "white",
+                boxShadow: "none",
+                backgroundColor: "transparent",
+                "&:hover": {
+                  backgroundColor: "rgb(40,40,40)",
+                  boxShadow:
+                    "0px 3px 1px -2px rgba(0,0,0,0.2),0px 2px 2px 0px rgba(0,0,0,0.14),0px 1px 5px 0px rgba(0,0,0,0.12)"
+                },
+                "&.MuiButton-loading": {
+                  color: "white",
+                  backgroundColor: "rgb(40,40,40)"
+                }
+              }}
+              size="small"
+              loadingPosition="end"
+              variant="contained"
             >
-              选择视频
-            </div>
+              {t("home.select_video")}
+            </Button>
           </div>
         </div>
       </div>
       <div className="flex items-center justify-center">
-        <div className="w-122 flex justify-end">
+        <div className="w-124 flex justify-end">
           <div className="cursor-pointer" onClick={click}>
             <Button
               sx={{
