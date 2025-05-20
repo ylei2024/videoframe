@@ -7,6 +7,7 @@ import MuiInput from "@mui/material/Input"
 import { useTranslation } from "react-i18next"
 import { open } from "@tauri-apps/plugin-dialog"
 import { readFile } from "@tauri-apps/plugin-fs"
+import CircularProgress from "@mui/material/CircularProgress"
 import HighlightOffRoundedIcon from "@mui/icons-material/HighlightOffRounded"
 import { useState, useRef, Dispatch, SetStateAction, MutableRefObject, useEffect } from "react"
 
@@ -103,24 +104,30 @@ const Control = (props: ControlProps) => {
   const [duration, setDuration] = useState<number>(100)
   // position = h * 60 * 60 + m * 60 + s
   const [position, setPosition] = useState<number>(0)
-  const [hour, setHour] = useState<number>(0)
-  const [minute, setMinute] = useState<number>(0)
-  const [second, setSecond] = useState<number>(0)
-  const changePosition = (value: number, type: string) => {
+  const [hour, setHour] = useState<string>("00")
+  const [minute, setMinute] = useState<string>("00")
+  const [second, setSecond] = useState<string>("00")
+  // 标记是否正在解析视频时长
+  const [parsing_vedio, setParsingVedio] = useState<boolean>(false)
+  const changePosition = (value: string, type: string) => {
     if (type == "hour") {
       setHour(value)
     } else if (type == "minute") {
       setMinute(value)
     } else if (type == "second") {
       setSecond(value)
-    } 
+    }
     if (type == "position") {
-      setPosition(value)
-      setHour(Math.floor(value / 3600))
-      setMinute(Math.floor((value % 3600) / 60))
-      setSecond(Math.floor(value % 60))
+      const number = parseInt(value)
+      setPosition(number)
+      const _hour = Math.floor(number / 3600)
+      const _minute = Math.floor((number % 3600) / 60)
+      const _second = number % 60
+      setHour(_hour < 10 ? "0" + _hour : String(_hour))
+      setMinute(_minute < 10 ? "0" + _minute : String(_minute))
+      setSecond(_second < 10 ? "0" + _second : String(_second))
     } else {
-      setPosition(hour * 60 * 60 + minute * 60 + second)
+      setPosition(parseInt(hour) * 60 * 60 + parseInt(minute) * 60 + parseInt(second))
     }
   }
   const loadFFmpeg = async () => {
@@ -136,11 +143,13 @@ const Control = (props: ControlProps) => {
   }
   useEffect(() => {
     const run = async () => {
+      setParsingVedio(true)
       await loadFFmpeg()
       console.log(await ffmpeg.current.listDir("/data"))
       ffmpeg.current.terminate()
       setDuration(await getVideoDuration(filepath))
-      changePosition(0, "position")
+      changePosition("0", "position")
+      setParsingVedio(false)
     }
     run()
   }, [filepath])
@@ -181,66 +190,66 @@ const Control = (props: ControlProps) => {
   return (
     <div className="flex flex-col items-center justify-center gap-2">
       <div className="w-124 flex flex-row items-center gap-6">
-        <div className="w-24/124 text-gray-100 text-sm flex items-center justify-center gap-0.5">
+        <div className="w-20/124 text-gray-100 text-sm flex items-center justify-center gap-0.5">
           <MuiInput
             size="small"
-            value={String(hour).padStart(2, '0')}
-            inputMode="numeric"
+            value={hour}
+            onBlur={() => {
+              setHour(hour.length == 0 ? "00" : hour.length == 1 ? "0" + hour : hour)
+            }}
             onChange={(e) => {
-              changePosition(parseInt(e.target.value), "hour")
+              changePosition(e.target.value.replace(/[^0-9]/g, ""), "hour")
             }}
             sx={{
-              width: "1.5rem",
+              width: "1.2rem",
               height: "1.5rem",
               color: "white"
             }}
             inputProps={{
               type: "text",
               maxLength: 2,
-              inputMode: "numeric",
-              pattern: "[0-9]*",
               style: { textAlign: "center" }
             }}
           />
-          <div className="h-full text-center">:</div>
+          <div className="h-full mb-1 text-center">:</div>
           <MuiInput
             size="small"
-            value={String(minute).padStart(2, '0')}
-            inputMode="numeric"
+            value={minute}
+            onBlur={() => {
+              setMinute(minute.length == 0 ? "00" : minute.length == 1 ? "0" + minute : minute)
+            }}
             onChange={(e) => {
-              changePosition(parseInt(e.target.value), "minute")
+              changePosition(e.target.value.replace(/[^0-9]/g, ""), "minute")
             }}
             sx={{
-              width: "1.5rem",
+              width: "1.2rem",
               height: "1.5rem",
               color: "white"
             }}
             inputProps={{
               type: "text",
               maxLength: 2,
-              inputMode: "numeric",
-              pattern: "[0-9]*",
               style: { textAlign: "center" }
             }}
           />
-          <div className="h-full text-center">:</div>
+          <div className="h-full mb-1 text-center">:</div>
           <MuiInput
             size="small"
-            value={String(second).padStart(2, '0')}
-            inputMode="numeric"
+            value={second}
+            onBlur={() => {
+              setSecond(second.length == 0 ? "00" : second.length == 1 ? "0" + second : second)
+            }}
             onChange={(e) => {
-              changePosition(parseInt(e.target.value), "second")
+              changePosition(e.target.value.replace(/[^0-9]/g, ""), "second")
             }}
             sx={{
-              width: "1.5rem",
+              width: "1.2rem",
               height: "1.5rem",
               color: "white"
             }}
             inputProps={{
               type: "text",
               maxLength: 2,
-              inputMode: "numeric",
-              pattern: "[0-9]*",
               style: { textAlign: "center" }
             }}
           />
@@ -252,9 +261,67 @@ const Control = (props: ControlProps) => {
             value={position}
             min={0}
             max={duration}
-            onChange={(_, value) => changePosition(value, "position")}
+            onChange={(_, value) => changePosition(String(value), "position")}
           />
         </div>
+        {parsing_vedio ? (
+          <div className="h-full w-20/124 flex items-center justify-center">
+            <CircularProgress size={20} />
+          </div>
+        ) : (
+          <div className="w-20/124 text-gray-100 text-sm flex items-center justify-center gap-0.5">
+            <MuiInput
+              readOnly={true}
+              value={String(Math.floor(duration / 3600)).padStart(2, "0")}
+              size="small"
+              sx={{
+                width: "1.2rem",
+                height: "1.5rem",
+                color: "white"
+              }}
+              inputProps={{
+                type: "text",
+                maxLength: 2,
+                style: { textAlign: "center", cursor: "default" },
+                readOnly: true
+              }}
+            />
+            <div className="h-full mb-1 text-center">:</div>
+            <MuiInput
+              readOnly={true}
+              value={String(Math.floor((duration % 3600) / 60)).padStart(2, "0")}
+              size="small"
+              sx={{
+                width: "1.2rem",
+                height: "1.5rem",
+                color: "white"
+              }}
+              inputProps={{
+                type: "text",
+                maxLength: 2,
+                style: { textAlign: "center", cursor: "default" },
+                readOnly: true
+              }}
+            />
+            <div className="h-full mb-1 text-center">:</div>
+            <MuiInput
+              readOnly={true}
+              value={String(duration % 60).padStart(2, "0")}
+              size="small"
+              sx={{
+                width: "1.2rem",
+                height: "1.5rem",
+                color: "white"
+              }}
+              inputProps={{
+                type: "text",
+                maxLength: 2,
+                style: { textAlign: "center", cursor: "default" },
+                readOnly: true
+              }}
+            />
+          </div>
+        )}
       </div>
       <div className="w-124 flex justify-end">
         <div className="cursor-pointer" onClick={click}>
