@@ -127,7 +127,6 @@ const Control = (props: ControlProps) => {
     console.log("视频时长", text)
     return parseFloat(text)
   }
-
   const click = async () => {
     if (state == State.Running) {
       // 停止
