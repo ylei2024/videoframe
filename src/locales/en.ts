@@ -4,7 +4,7 @@ const en = {
   "home.running": "running",
   "home.stopping": "stopping",
   "home.select_video": "select",
-  "home.video_path": "video path",
+  "home.video": "video",
 }
 
 export default en

@@ -1,12 +1,10 @@
 import { TFunction } from "i18next"
-import { FFmpeg } from "@ffmpeg/ffmpeg"
 import { toBlobURL } from "@ffmpeg/util"
 import Button from "@mui/material/Button"
 import Slider from "@mui/material/Slider"
 import MuiInput from "@mui/material/Input"
 import { useTranslation } from "react-i18next"
-import { open } from "@tauri-apps/plugin-dialog"
-import { readFile } from "@tauri-apps/plugin-fs"
+import { FFmpeg, FFFSType } from "@ffmpeg/ffmpeg"
 import CircularProgress from "@mui/material/CircularProgress"
 import HighlightOffRoundedIcon from "@mui/icons-material/HighlightOffRounded"
 import { useState, useRef, Dispatch, SetStateAction, MutableRefObject, useEffect } from "react"
@@ -17,38 +15,42 @@ function delay(ms: number) {
 
 interface InputProps {
   t: TFunction<"translation", undefined>
-  filepath: string
-  setFilePath: Dispatch<SetStateAction<string>>
+  file: File | null
+  setFile: Dispatch<SetStateAction<File | null>>
 }
 const Input = (props: InputProps) => {
-  const { t, filepath, setFilePath } = props
-  const handleSelectFile = async () => {
-    const selected = await open({
-      multiple: false,
-      filters: [{ name: "Video", extensions: ["mp4", "avi", "mkv"] }]
-    })
-    if (typeof selected === "string") {
-      setFilePath(selected)
-    }
-  }
+  const { t, file, setFile } = props
+  const input_ref = useRef<HTMLInputElement>(null)
   return (
     <div className="flex items-center justify-center w-full text-gray-100 text-sm">
       <div className="rounded-lg h-9 w-124 bg-[rgb(41,40,40)] flex items-start">
         <input
-          placeholder={t("home.video_path")}
-          value={filepath}
+          ref={input_ref}
+          type="file"
+          className="hidden"
           onChange={(e) => {
-            setFilePath(e.target.value)
+            if (e.target.files) {
+              setFile(e.target.files[0])
+            }
           }}
+        />
+        <input
+          readOnly={true}
+          placeholder={t("home.video")}
+          value={file ? file.name : ""}
           className="pl-2 h-full w-100/124 flex items-center focus:outline-none focus:ring-0"
         />
         <div
           className="h-full w-2/124 flex justify-center items-center px-4 cursor-pointer"
           onClick={() => {
-            setFilePath("")
+            setFile(null)
+            if (input_ref.current) {
+              input_ref.current.value = ""
+              input_ref.current.files = null
+            }
           }}
         >
-          {filepath && (
+          {file && (
             <HighlightOffRoundedIcon
               sx={{
                 fontSize: 18
@@ -61,7 +63,9 @@ const Input = (props: InputProps) => {
         </div>
         <div className="h-full w-22/124 flex items-center justify-center">
           <Button
-            onClick={handleSelectFile}
+            onClick={() => {
+              input_ref.current?.click()
+            }}
             sx={{
               color: "white",
               boxShadow: "none",
@@ -91,7 +95,7 @@ const Input = (props: InputProps) => {
 interface ControlProps {
   t: TFunction<"translation", undefined>
   ffmpeg: MutableRefObject<FFmpeg>
-  filepath: string
+  file: File | null
 }
 const Control = (props: ControlProps) => {
   enum State {
@@ -99,16 +103,16 @@ const Control = (props: ControlProps) => {
     Running = "running",
     Stopping = "stopping"
   }
-  const { t, ffmpeg, filepath } = props
+  const { t, ffmpeg, file } = props
   const [state, setState] = useState<State>(State.Run)
-  const [duration, setDuration] = useState<number>(100)
+  const [duration, setDuration] = useState<number>(0)
   // position = h * 60 * 60 + m * 60 + s
   const [position, setPosition] = useState<number>(0)
   const [hour, setHour] = useState<string>("00")
   const [minute, setMinute] = useState<string>("00")
   const [second, setSecond] = useState<string>("00")
   // 标记是否正在解析视频时长
-  const [parsing_vedio, setParsingVedio] = useState<boolean>(false)
+  const [parsing_video, setParsingVideo] = useState<boolean>(false)
   const changePosition = (value: string, type: string) => {
     if (type == "hour") {
       setHour(value)
@@ -142,41 +146,45 @@ const Control = (props: ControlProps) => {
     }
   }
   useEffect(() => {
+    const input_dir = "/data"
     const run = async () => {
-      setParsingVedio(true)
-      await loadFFmpeg()
-      console.log(await ffmpeg.current.listDir("/data"))
-      ffmpeg.current.terminate()
-      setDuration(await getVideoDuration(filepath))
-      changePosition("0", "position")
-      setParsingVedio(false)
+      setParsingVideo(true)
+      try {
+        await loadFFmpeg()
+        if (!file) {
+          return 0
+        }
+        await loadFFmpeg()
+        const filename = file.name
+        const target_path = "/data/" + filename
+        await ffmpeg.current.mount(FFFSType.WORKERFS, { files: [file] }, input_dir)
+        await ffmpeg.current.ffprobe([
+          "-v",
+          "error",
+          "-show_entries",
+          "format=duration",
+          "-of",
+          "default=noprint_wrappers=1:nokey=1",
+          target_path,
+          "-o",
+          "output.txt"
+        ])
+        const data = await ffmpeg.current.readFile("output.txt")
+        const text = typeof data === "string" ? data : new TextDecoder("utf-8").decode(data)
+        console.log("视频时长", text)
+        setDuration(Math.trunc(parseFloat(text)))
+      } finally {
+        setParsingVideo(false)
+      }
     }
     run()
-  }, [filepath])
-  const getVideoDuration = async (filepath: string) => {
-    if (!filepath) {
-      return 0
+    return () => {
+      changePosition("0", "position")
+      setDuration(0)
+      ffmpeg.current.unmount(input_dir)
+      ffmpeg.current.terminate()
     }
-    await loadFFmpeg()
-    const filename = filepath.split(/[/\\]/).pop() || "video.mp4"
-    const target_path = "/data/" + filename
-    await ffmpeg.current.writeFile(target_path, await readFile(filepath))
-    await ffmpeg.current.ffprobe([
-      "-v",
-      "error",
-      "-show_entries",
-      "format=duration",
-      "-of",
-      "default=noprint_wrappers=1:nokey=1",
-      target_path,
-      "-o",
-      "output.txt"
-    ])
-    const data = await ffmpeg.current.readFile("output.txt")
-    const text = typeof data === "string" ? data : new TextDecoder("utf-8").decode(data)
-    console.log("视频时长", text)
-    return Math.trunc(parseFloat(text))
-  }
+  }, [file])
   const click = async () => {
     if (state == State.Running) {
       // 停止
@@ -264,7 +272,7 @@ const Control = (props: ControlProps) => {
             onChange={(_, value) => changePosition(String(value), "position")}
           />
         </div>
-        {parsing_vedio ? (
+        {parsing_video ? (
           <div className="h-full w-20/124 flex items-center justify-center">
             <CircularProgress size={20} />
           </div>
@@ -350,11 +358,11 @@ const Control = (props: ControlProps) => {
 const Home = () => {
   const { t } = useTranslation()
   const ffmpeg = useRef(new FFmpeg())
-  const [filepath, setFilePath] = useState<string>("")
+  const [file, setFile] = useState<File | null>(null)
   return (
     <div className="font-sans flex flex-col gap-7">
-      <Input {...{ t, filepath, setFilePath }}></Input>
-      <Control {...{ t, ffmpeg, filepath }}></Control>
+      <Input {...{ t, file, setFile }}></Input>
+      <Control {...{ t, ffmpeg, file }}></Control>
     </div>
   )
 }

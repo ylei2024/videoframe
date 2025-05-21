@@ -4,7 +4,7 @@ const zhCN = {
   "home.running": "运行中",
   "home.stopping": "停止中",
   "home.select_video": "选择视频",
-  "home.video_path": "视频路径",
+  "home.video": "视频",
 }
 
 export default zhCN
