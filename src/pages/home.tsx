@@ -9,17 +9,26 @@ import CircularProgress from "@mui/material/CircularProgress"
 import HighlightOffRoundedIcon from "@mui/icons-material/HighlightOffRounded"
 import { useState, useRef, Dispatch, SetStateAction, MutableRefObject, useEffect } from "react"
 
-function delay(ms: number) {
-  return new Promise((resolve) => setTimeout(resolve, ms))
+async function loadFFmpeg(ffmpeg: MutableRefObject<FFmpeg>) {
+  if (!ffmpeg.current.loaded) {
+    await ffmpeg.current.load({
+      coreURL: await toBlobURL("./ffmpeg-core.js", "text/javascript"),
+      wasmURL: await toBlobURL("./ffmpeg-core.wasm", "application/wasm"),
+      workerURL: await toBlobURL("./ffmpeg-core.worker.js", "text/javascript")
+    })
+    await ffmpeg.current.createDir("/data")
+    await ffmpeg.current.createDir("/output")
+  }
 }
 
 interface InputProps {
+  ffmpeg: MutableRefObject<FFmpeg>
   t: TFunction<"translation", undefined>
   file: File | null
   setFile: Dispatch<SetStateAction<File | null>>
 }
 const Input = (props: InputProps) => {
-  const { t, file, setFile } = props
+  const { ffmpeg, t, file, setFile } = props
   const input_ref = useRef<HTMLInputElement>(null)
   return (
     <div className="flex items-center justify-center w-full text-gray-100 text-sm">
@@ -42,7 +51,14 @@ const Input = (props: InputProps) => {
         />
         <div
           className="h-full w-2/124 flex justify-center items-center px-4 cursor-pointer"
-          onClick={() => {
+          onClick={async () => {
+            if (file && ffmpeg.current.loaded) {
+              try {
+                await ffmpeg.current.unmount("/data/")
+              } catch (error) {
+                console.log(error)
+              }
+            }
             setFile(null)
             if (input_ref.current) {
               input_ref.current.value = ""
@@ -99,18 +115,21 @@ interface ControlProps {
 }
 const Control = (props: ControlProps) => {
   enum State {
-    Run = "run",
+    // 就绪状态
+    ready = "ready",
     Running = "running",
-    Stopping = "stopping"
+    Stopping = "stopping",
+    Over = "over"
   }
   const { t, ffmpeg, file } = props
-  const [state, setState] = useState<State>(State.Run)
+  const [state, setState] = useState<State>(State.ready)
   const [duration, setDuration] = useState<number>(0)
   // position = h * 60 * 60 + m * 60 + s
   const [position, setPosition] = useState<number>(0)
   const [hour, setHour] = useState<string>("00")
   const [minute, setMinute] = useState<string>("00")
   const [second, setSecond] = useState<string>("00")
+  const controller_ref = useRef<AbortController | null>(null)
   // 标记是否正在解析视频时长
   const [parsing_video, setParsingVideo] = useState<boolean>(false)
   const changePosition = (value: string, type: string) => {
@@ -134,30 +153,34 @@ const Control = (props: ControlProps) => {
       setPosition(parseInt(hour) * 60 * 60 + parseInt(minute) * 60 + parseInt(second))
     }
   }
-  const loadFFmpeg = async () => {
-    if (!ffmpeg.current.loaded) {
-      await ffmpeg.current.load({
-        coreURL: await toBlobURL("./ffmpeg-core.js", "text/javascript"),
-        wasmURL: await toBlobURL("./ffmpeg-core.wasm", "application/wasm"),
-        workerURL: await toBlobURL("./ffmpeg-core.worker.js", "text/javascript")
-      })
-      // 创建存放数据的目录
-      await ffmpeg.current.createDir("data")
+  const stop_task = async () => {
+    const wait = (ms: number) => new Promise((res) => setTimeout(res, ms))
+    if (controller_ref.current) {
+      controller_ref.current.abort()
+      try {
+        while (true) {
+          if (state == State.Over) {
+            break
+          }
+          await wait(1000)
+        }
+      } finally {
+        controller_ref.current = null
+      }
     }
   }
   useEffect(() => {
-    const input_dir = "/data"
     const run = async () => {
+      if (!file) {
+        return
+      }
       setParsingVideo(true)
       try {
-        await loadFFmpeg()
-        if (!file) {
-          return 0
-        }
-        await loadFFmpeg()
-        const filename = file.name
-        const target_path = "/data/" + filename
-        await ffmpeg.current.mount(FFFSType.WORKERFS, { files: [file] }, input_dir)
+        await loadFFmpeg(ffmpeg)
+        const target_path = "/data/" + file.name
+        // https://github.com/ffmpegwasm/ffmpeg.wasm/issues/823
+        await ffmpeg.current.exec(["-i", "not-found"])
+        await ffmpeg.current.mount(FFFSType.WORKERFS, { files: [file] }, "/data")
         await ffmpeg.current.ffprobe([
           "-v",
           "error",
@@ -179,21 +202,53 @@ const Control = (props: ControlProps) => {
     }
     run()
     return () => {
-      changePosition("0", "position")
       setDuration(0)
-      ffmpeg.current.unmount(input_dir)
-      ffmpeg.current.terminate()
+      changePosition("0", "position")
+      stop_task().then(() => {})
     }
   }, [file])
   const click = async () => {
     if (state == State.Running) {
-      // 停止
       setState(State.Stopping)
-      await delay(10000)
-    } else if (state == State.Run) {
+      await stop_task()
+    } else if (state == State.ready && file) {
       setState(State.Running)
+      try {
+        if (!ffmpeg.current.loaded) {
+          await loadFFmpeg(ffmpeg)
+        }
+        const target_path = "/data/" + file.name
+        const ss = String(parseInt(hour) * 60 * 60 + parseInt(minute) * 60 + parseInt(second))
+        controller_ref.current = new AbortController()
+        const signal = controller_ref.current.signal
+        await ffmpeg.current.exec(
+          [
+            "-ss",
+            ss,
+            "-t",
+            "10",
+            "-i",
+            target_path,
+            "-vf",
+            "select='eq(pict_type\\,I)'",
+            "-vsync",
+            "vfr",
+            "output/%03d.jpg"
+          ],
+          undefined,
+          { signal }
+        )
+        // TODO 读取图片数据, 并删除ffmpeg FS中存在的图片
+      } catch (error) {
+        console.log(error)
+      } finally {
+        // 标记任务结束
+        setState(State.Over)
+      }
     }
-    setState(State.Run)
+    if (state != State.Stopping) {
+      setState(State.ready)
+    }
   }
   return (
     <div className="flex flex-col items-center justify-center gap-2">
@@ -347,7 +402,7 @@ const Control = (props: ControlProps) => {
             loadingPosition="end"
             variant="contained"
           >
-            {state == State.Run ? t("home.run") : state == State.Running ? t("home.running") : t("home.stopping")}
+            {state == State.ready ? t("home.run") : state == State.Running ? t("home.running") : t("home.stopping")}
           </Button>
         </div>
       </div>
@@ -361,7 +416,7 @@ const Home = () => {
   const [file, setFile] = useState<File | null>(null)
   return (
     <div className="font-sans flex flex-col gap-7">
-      <Input {...{ t, file, setFile }}></Input>
+      <Input {...{ ffmpeg, t, file, setFile }}></Input>
       <Control {...{ t, ffmpeg, file }}></Control>
     </div>
   )
