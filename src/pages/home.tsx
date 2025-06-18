@@ -9,7 +9,20 @@ import CircularProgress from "@mui/material/CircularProgress"
 import HighlightOffRoundedIcon from "@mui/icons-material/HighlightOffRounded"
 import { useState, useRef, Dispatch, SetStateAction, MutableRefObject, useEffect } from "react"
 
-async function loadFFmpeg(ffmpeg: MutableRefObject<FFmpeg>) {
+enum State {
+  ready = "ready",
+  Running = "running",
+  Stopping = "stopping",
+  Over = "over"
+}
+
+interface Image {
+  task_id: number
+  filename: string
+  base64: string
+}
+
+async function load(ffmpeg: MutableRefObject<FFmpeg>) {
   if (!ffmpeg.current.loaded) {
     await ffmpeg.current.load({
       coreURL: await toBlobURL("./ffmpeg-core.js", "text/javascript"),
@@ -18,6 +31,82 @@ async function loadFFmpeg(ffmpeg: MutableRefObject<FFmpeg>) {
     })
     await ffmpeg.current.createDir("/data")
     await ffmpeg.current.createDir("/output")
+  }
+}
+
+interface Task {
+  id: number
+  setState: Dispatch<SetStateAction<State>>
+  ffmpeg: MutableRefObject<FFmpeg>
+  filename: string
+  ss: number
+  interval: number
+  controller: AbortController
+  setImages: Dispatch<SetStateAction<Image[]>>
+  state: "running" | "completed" | "ready"
+}
+async function exec(task: Task) {
+  const { id, setState, ffmpeg, filename, ss, interval, controller, setImages } = task
+  setState(State.Running)
+  try {
+    if (!ffmpeg.current.loaded) {
+      await load(ffmpeg)
+    }
+    const target_path = "/data/" + filename
+    const signal = controller.signal
+    await ffmpeg.current.exec(
+      [
+        "-ss",
+        String(ss),
+        "-t",
+        String(interval),
+        "-i",
+        target_path,
+        "-vf",
+        "select='eq(pict_type\\,I)'",
+        "-vsync",
+        "vfr",
+        "output/%03d.jpg"
+      ],
+      undefined,
+      { signal }
+    )
+    const output = await ffmpeg.current.listDir("output")
+    const append: Image[] = []
+    for (const { name, isDir } of output) {
+      if (!isDir) {
+        const image_path = "/output/" + name
+        const file = await ffmpeg.current.readFile(image_path)
+        if (file instanceof Uint8Array) {
+          let binary = ""
+          const len = file.byteLength
+          for (let i = 0; i < len; i++) {
+            binary += String.fromCharCode(file[i])
+          }
+          append.push({
+            task_id: id,
+            filename: name,
+            base64: `data:image/png;base64,${window.btoa(binary)}`
+          })
+        }
+        await ffmpeg.current.deleteFile(image_path)
+      }
+    }
+    setImages((prev) => {
+      const exist = new Set(prev.map((i) => `${i.task_id}-${i.filename}`))
+      const new_images = [...prev]
+      for (const image of append) {
+        const key = `${image.task_id}-${image.filename}`
+        if (!exist.has(key)) {
+          new_images.push(image)
+        }
+      }
+      return new_images
+    })
+  } catch (error) {
+    console.log(error)
+  } finally {
+    setState(State.Over)
   }
 }
 
@@ -112,27 +201,24 @@ interface ControlProps {
   t: TFunction<"translation", undefined>
   ffmpeg: MutableRefObject<FFmpeg>
   file: File | null
+  setImages: Dispatch<SetStateAction<Image[]>>
+  state: State
+  setState: Dispatch<SetStateAction<State>>
+  tasks: MutableRefObject<Task[]>
 }
 const Control = (props: ControlProps) => {
-  enum State {
-    // 就绪状态
-    ready = "ready",
-    Running = "running",
-    Stopping = "stopping",
-    Over = "over"
-  }
-  const { t, ffmpeg, file } = props
-  const [state, setState] = useState<State>(State.ready)
-  const [duration, setDuration] = useState<number>(0)
-  // position = h * 60 * 60 + m * 60 + s
-  const [position, setPosition] = useState<number>(0)
+  const interval = 60
+  const { t, ffmpeg, file, setImages, state, setState, tasks } = props
   const [hour, setHour] = useState<string>("00")
   const [minute, setMinute] = useState<string>("00")
   const [second, setSecond] = useState<string>("00")
-  const controller_ref = useRef<AbortController | null>(null)
-  // 标记是否正在解析视频时长
+  const [duration, setDuration] = useState<number>(0)
+  const [position, setPosition] = useState<number>(0)
   const [parsing_video, setParsingVideo] = useState<boolean>(false)
   const changePosition = (value: string, type: string) => {
+    if (state == State.Stopping || state == State.Running) {
+      return
+    }
     if (type == "hour") {
       setHour(value)
     } else if (type == "minute") {
@@ -152,21 +238,26 @@ const Control = (props: ControlProps) => {
     } else {
       setPosition(parseInt(hour) * 60 * 60 + parseInt(minute) * 60 + parseInt(second))
     }
+    setImages([])
+    tasks.current = []
   }
-  const stop_task = async () => {
+  const stop = async () => {
     const wait = (ms: number) => new Promise((res) => setTimeout(res, ms))
-    if (controller_ref.current) {
-      controller_ref.current.abort()
-      try {
-        while (true) {
-          if (state == State.Over) {
-            break
-          }
-          await wait(1000)
-        }
-      } finally {
-        controller_ref.current = null
+    let task_id = null
+    for (let i = 0; i < tasks.current.length; i++) {
+      if (tasks.current[i].state === "running") {
+        task_id = i
       }
+    }
+    if (task_id) {
+      tasks.current[task_id].controller.abort()
+      while (true) {
+        if (state == State.Over) {
+          break
+        }
+        await wait(1000)
+      }
+      tasks.current[task_id].state = "ready"
     }
   }
   useEffect(() => {
@@ -176,7 +267,7 @@ const Control = (props: ControlProps) => {
       }
       setParsingVideo(true)
       try {
-        await loadFFmpeg(ffmpeg)
+        await load(ffmpeg)
         const target_path = "/data/" + file.name
         // https://github.com/ffmpegwasm/ffmpeg.wasm/issues/823
         await ffmpeg.current.exec(["-i", "not-found"])
@@ -194,7 +285,6 @@ const Control = (props: ControlProps) => {
         ])
         const data = await ffmpeg.current.readFile("output.txt")
         const text = typeof data === "string" ? data : new TextDecoder("utf-8").decode(data)
-        console.log("视频时长", text)
         setDuration(Math.trunc(parseFloat(text)))
       } finally {
         setParsingVideo(false)
@@ -202,48 +292,54 @@ const Control = (props: ControlProps) => {
     }
     run()
     return () => {
+      stop().then(() => {})
+      setImages([])
       setDuration(0)
+      tasks.current = []
       changePosition("0", "position")
-      stop_task().then(() => {})
     }
   }, [file])
   const click = async () => {
     if (state == State.Running) {
       setState(State.Stopping)
-      await stop_task()
+      await stop()
     } else if (state == State.ready && file) {
-      setState(State.Running)
-      try {
-        if (!ffmpeg.current.loaded) {
-          await loadFFmpeg(ffmpeg)
+      if (tasks.current.length === 0) {
+        let ss = parseInt(hour) * 60 * 60 + parseInt(minute) * 60 + parseInt(second)
+        const next_tasks: Task[] = []
+        let id = 0
+        while (ss < duration) {
+          const controller = new AbortController()
+          const remaining = duration - ss
+          next_tasks.push({
+            id: id,
+            setState: setState,
+            ffmpeg: ffmpeg,
+            filename: file.name,
+            ss: ss,
+            interval: remaining >= interval ? interval : remaining,
+            controller: controller,
+            setImages: setImages,
+            state: "ready"
+          })
+          id += 1
+          ss += interval
         }
-        const target_path = "/data/" + file.name
-        const ss = String(parseInt(hour) * 60 * 60 + parseInt(minute) * 60 + parseInt(second))
-        controller_ref.current = new AbortController()
-        const signal = controller_ref.current.signal
-        await ffmpeg.current.exec(
-          [
-            "-ss",
-            ss,
-            "-t",
-            "10",
-            "-i",
-            target_path,
-            "-vf",
-            "select='eq(pict_type\\,I)'",
-            "-vsync",
-            "vfr",
-            "output/%03d.jpg"
-          ],
-          undefined,
-          { signal }
-        )
-        // TODO 读取图片数据, 并删除ffmpeg FS中存在的图片
-      } catch (error) {
-        console.log(error)
-      } finally {
-        // 标记任务结束
-        setState(State.Over)
+        tasks.current = next_tasks
+      }
+      for (let i = 0; i < tasks.current.length; i++) {
+        if (tasks.current[i].state === "ready") {
+          tasks.current[i].state = "running"
+          await exec(tasks.current[i])
+          if (tasks.current[i].controller.signal.aborted) {
+            tasks.current[i].state = "ready"
+            tasks.current[i].controller = new AbortController()
+          } else {
+            tasks.current[i].state = "completed"
+          }
+          console.log(tasks.current)
+          break
+        }
       }
     }
     if (state != State.Stopping) {
@@ -412,12 +508,15 @@ const Control = (props: ControlProps) => {
 
 const Home = () => {
   const { t } = useTranslation()
+  const tasks = useRef<Task[]>([])
   const ffmpeg = useRef(new FFmpeg())
+  const [images, setImages] = useState<Image[]>([])
   const [file, setFile] = useState<File | null>(null)
+  const [state, setState] = useState<State>(State.ready)
   return (
     <div className="font-sans flex flex-col gap-7">
       <Input {...{ ffmpeg, t, file, setFile }}></Input>
-      <Control {...{ t, ffmpeg, file }}></Control>
+      <Control {...{ t, ffmpeg, file, setImages, state, setState, tasks }}></Control>
     </div>
   )
 }
