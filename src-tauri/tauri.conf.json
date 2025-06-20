@@ -15,9 +15,10 @@
         "title": "",
         "transparent": true,
         "decorations": false,
-        "width": 800,
-        "height": 600,
-        "dragDropEnabled": false
+        "minWidth": 800,
+        "minHeight": 600,
+        "dragDropEnabled": false,
+        "center": true
       }
     ],
     "security": {

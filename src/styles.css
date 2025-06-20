@@ -1,1 +1,10 @@
 @import "tailwindcss";
+
+@layer utilities {
+  .scrollbar-none {
+    -ms-overflow-style: none;  /* IE 10+ */
+  }
+  .scrollbar-none::-webkit-scrollbar {
+    display: none; /* Chrome, Safari, Opera */
+  }
+}

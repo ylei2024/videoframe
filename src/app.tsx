@@ -17,7 +17,7 @@ function App() {
     init()
   }, [])
   return (
-    <main data-tauri-drag-region className="bg-[rgb(17,17,17)] min-h-screen">
+    <main data-tauri-drag-region className="bg-[rgb(17,17,17)]">
       <Top></Top>
       <Home></Home>
     </main>

@@ -56,14 +56,14 @@ async function exec(task: Task) {
     const signal = controller.signal
     await ffmpeg.current.exec(
       [
+        "-skip_frame",
+        "nokey",
         "-ss",
         String(ss),
         "-t",
         String(interval),
         "-i",
         target_path,
-        "-vf",
-        "select='eq(pict_type\\,I)'",
         "-vsync",
         "vfr",
         "output/%03d.jpg"
@@ -120,7 +120,7 @@ const Input = (props: InputProps) => {
   const { ffmpeg, t, file, setFile } = props
   const input_ref = useRef<HTMLInputElement>(null)
   return (
-    <div className="flex items-center justify-center w-full text-gray-100 text-sm">
+    <div className="flex items-center justify-center h-1/10 min-h-9 w-full text-gray-100 text-sm">
       <div className="rounded-lg h-9 w-124 bg-[rgb(41,40,40)] flex items-start">
         <input
           ref={input_ref}
@@ -207,7 +207,7 @@ interface ControlProps {
   tasks: MutableRefObject<Task[]>
 }
 const Control = (props: ControlProps) => {
-  const interval = 60
+  const interval = 60 * 15
   const { t, ffmpeg, file, setImages, state, setState, tasks } = props
   const [hour, setHour] = useState<string>("00")
   const [minute, setMinute] = useState<string>("00")
@@ -334,11 +334,10 @@ const Control = (props: ControlProps) => {
           if (tasks.current[i].controller.signal.aborted) {
             tasks.current[i].state = "ready"
             tasks.current[i].controller = new AbortController()
+            break
           } else {
             tasks.current[i].state = "completed"
           }
-          console.log(tasks.current)
-          break
         }
       }
     }
@@ -347,7 +346,7 @@ const Control = (props: ControlProps) => {
     }
   }
   return (
-    <div className="flex flex-col items-center justify-center gap-2">
+    <div className="h-1/10 min-h-9 flex flex-col items-center justify-center gap-2">
       <div className="w-124 flex flex-row items-center gap-6">
         <div className="w-20/124 text-gray-100 text-sm flex items-center justify-center gap-0.5">
           <MuiInput
@@ -506,6 +505,26 @@ const Control = (props: ControlProps) => {
   )
 }
 
+interface ImagesBox {
+  images: Image[]
+}
+const ImagesBox = (props: ImagesBox) => {
+  const { images } = props
+  return (
+    <div className="h-8/10 w-full scrollbar-none overflow-y-scroll flex items-center justify-center">
+      <div className="w-7/8 h-full grid grid-cols-3 gap-4">
+        {images.map((image) => {
+          return (
+            <div key={`${image.task_id}-${image.filename}`}>
+              <img src={image.base64} alt={image.filename} />
+            </div>
+          )
+        })}
+      </div>
+    </div>
+  )
+}
+
 const Home = () => {
   const { t } = useTranslation()
   const tasks = useRef<Task[]>([])
@@ -514,9 +533,10 @@ const Home = () => {
   const [file, setFile] = useState<File | null>(null)
   const [state, setState] = useState<State>(State.ready)
   return (
-    <div className="font-sans flex flex-col gap-7">
+    <div className="font-sans flex flex-col gap-7 w-full h-[calc(100vh-30px)]">
       <Input {...{ ffmpeg, t, file, setFile }}></Input>
       <Control {...{ t, ffmpeg, file, setImages, state, setState, tasks }}></Control>
+      <ImagesBox {...{ images }}></ImagesBox>
     </div>
   )
 }

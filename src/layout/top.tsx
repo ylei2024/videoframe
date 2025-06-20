@@ -8,7 +8,7 @@ const appWindow = getCurrentWebviewWindow()
 function Top() {
   const minWidth = 40
   return (
-    <div data-tauri-drag-region className="flex justify-end">
+    <div data-tauri-drag-region className="flex justify-end h-[30px]">
       <ButtonGroup
         variant="text"
         sx={{
