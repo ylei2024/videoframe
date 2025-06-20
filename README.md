@@ -1,8 +1,48 @@
-# Tauri + React + Typescript
+# VideoFrame - 视频关键帧提取工具
 
-This template should help get you started developing with Tauri, React and Typescript in Vite.
+## 项目简介
 
-## Recommended IDE Setup
+VideoFrame 是一个轻量级的桌面应用程序，用于从视频文件中提取关键帧。它基于Tauri 2 技术构建，具有极小的安装包体积和简洁的用户界面。
 
-- [VS Code](https://code.visualstudio.com/) + [Tauri](https://marketplace.visualstudio.com/items?itemName=tauri-apps.tauri-vscode) + [rust-analyzer](https://marketplace.visualstudio.com/items?itemName=rust-lang.rust-analyzer)
+## 主要功能特点
 
+- 🎥 从视频文件中提取关键帧
+- 🖼️ 预览提取的关键帧图像
+- 📦 极小的软件体积
+
+## 技术栈
+
+- **前端框架**: React
+- **UI 框架**: Tailwind CSS
+- **桌面应用框架**: Tauri 2
+- **视频处理**: ffmpeg.wasm
+- **打包工具**: Vite
+
+
+### 从源代码构建
+
+1. 克隆仓库：
+   ```bash
+   git clone https://github.com/ylei2024/videoframe.git
+   ```
+2. 安装依赖：
+   ```bash
+   npm install
+   ```
+3. 运行开发模式：
+   ```bash
+   npm run tauri dev
+   ```
+4. 构建应用：
+   ```bash
+   npm run tauri build
+   ```
+
+## 待实现功能 (TODO)
+
+- [ ] 图片点击放大显示功能
+- [ ] 保存所有图片到本地的功能
+
+## 贡献
+
+欢迎提交 Issue 和 Pull Request！如果您有任何建议或发现问题，请告诉我们。
