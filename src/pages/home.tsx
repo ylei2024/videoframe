@@ -4,15 +4,22 @@ import Button from "@mui/material/Button"
 import Slider from "@mui/material/Slider"
 import MuiInput from "@mui/material/Input"
 import { useTranslation } from "react-i18next"
+import { open } from "@tauri-apps/plugin-dialog"
 import { FFmpeg, FFFSType } from "@ffmpeg/ffmpeg"
+import { WebviewWindow } from "@tauri-apps/api/webviewWindow"
 import CircularProgress from "@mui/material/CircularProgress"
+import { open as fsopen, readDir } from "@tauri-apps/plugin-fs"
+import { getCurrentWebviewWindow } from "@tauri-apps/api/webviewWindow"
 import HighlightOffRoundedIcon from "@mui/icons-material/HighlightOffRounded"
 import { useState, useRef, Dispatch, SetStateAction, MutableRefObject, useEffect } from "react"
+
+const app = getCurrentWebviewWindow()
 
 enum State {
   ready = "ready",
   Running = "running",
   Stopping = "stopping",
+  Saveing = "saveing",
   Over = "over"
 }
 
@@ -66,7 +73,7 @@ async function exec(task: Task) {
         target_path,
         "-vsync",
         "vfr",
-        "output/%03d.jpg"
+        "output/%03d.png"
       ],
       undefined,
       { signal }
@@ -202,13 +209,15 @@ interface ControlProps {
   ffmpeg: MutableRefObject<FFmpeg>
   file: File | null
   setImages: Dispatch<SetStateAction<Image[]>>
+  images: Image[]
   state: State
   setState: Dispatch<SetStateAction<State>>
   tasks: MutableRefObject<Task[]>
 }
 const Control = (props: ControlProps) => {
   const interval = 60 * 15
-  const { t, ffmpeg, file, setImages, state, setState, tasks } = props
+  const { t, ffmpeg, file, images, setImages, state, setState, tasks } = props
+  const [error, setError] = useState<string>("")
   const [hour, setHour] = useState<string>("00")
   const [minute, setMinute] = useState<string>("00")
   const [second, setSecond] = useState<string>("00")
@@ -343,6 +352,48 @@ const Control = (props: ControlProps) => {
     }
     if (state != State.Stopping) {
       setState(State.ready)
+    }
+  }
+  const save = async () => {
+    if (state == State.Running || state == State.Stopping) {
+      return
+    }
+    const folder = await open({
+      directory: true,
+      multiple: false,
+      title: ""
+    })
+    if (folder === null) {
+      return
+    }
+    const dirs = await readDir(folder)
+    if (dirs.length > 0) {
+      for (const dir of dirs) {
+        if (dir.isFile && images.find((i) => i.filename === dir.name)) {
+          setError(t("home.folder.tip") + `: ${dir.name}`)
+          return
+        }
+      }
+      return
+    } else if (error) {
+      setError("")
+    }
+    // windows
+    try {
+      setState(State.Saveing)
+      for (const image of images) {
+        const path = folder + "\\" + image.filename
+        const file = await fsopen(path, { write: true, create: true })
+        const base64 = image.base64.split(",")[1]
+        const binary = window.atob(base64)
+        const array = new Uint8Array(binary.length)
+        for (let i = 0; i < binary.length; i++) {
+          array[i] = binary.charCodeAt(i)
+        }
+        await file.write(array)
+      }
+    } finally {
+      setState(State.Over)
     }
   }
   return (
@@ -481,7 +532,28 @@ const Control = (props: ControlProps) => {
           </div>
         )}
       </div>
-      <div className="w-124 flex justify-end">
+      <div className="w-124 flex justify-end items-center gap-4">
+        <div className="text-yellow-600 rounded-md font-semibold text-xs relative">
+          <span>{error}</span>
+        </div>
+        <div className="cursor-pointer" onClick={save}>
+          <Button
+            sx={{
+              color: "white",
+              backgroundColor: "rgb(40,40,40)",
+              "&.MuiButton-loading": {
+                color: "white",
+                backgroundColor: "rgb(40,40,40)"
+              }
+            }}
+            size="small"
+            loading={state == State.Saveing}
+            loadingPosition="end"
+            variant="contained"
+          >
+            {t("home.save")}
+          </Button>
+        </div>
         <div className="cursor-pointer" onClick={click}>
           <Button
             sx={{
@@ -497,7 +569,11 @@ const Control = (props: ControlProps) => {
             loadingPosition="end"
             variant="contained"
           >
-            {state == State.ready ? t("home.run") : state == State.Running ? t("home.running") : t("home.stopping")}
+            {state == State.ready || state == State.Over
+              ? t("home.run")
+              : state == State.Running
+                ? t("home.running")
+                : t("home.stopping")}
           </Button>
         </div>
       </div>
@@ -515,8 +591,44 @@ const ImagesBox = (props: ImagesBox) => {
       <div className="w-7/8 h-full grid grid-cols-3 gap-4">
         {images.map((image) => {
           return (
-            <div key={`${image.task_id}-${image.filename}`}>
-              <img src={image.base64} alt={image.filename} />
+            <div
+              className="transition-transform duration-300 ease-in-out hover:scale-102"
+              key={`${image.task_id}-${image.filename}`}
+            >
+              <img
+                src={image.base64}
+                alt={image.filename}
+                onClick={async (event: React.MouseEvent<HTMLImageElement>) => {
+                  const label = "image-" + image.task_id
+                  const element = event.target as HTMLImageElement
+                  const originalWidth = element.naturalWidth
+                  const originalHeight = element.naturalHeight
+                  const maxWidth = window.innerWidth * 0.8
+                  const maxHeight = window.innerHeight * 0.8
+                  const widthRatio = maxWidth / originalWidth
+                  const heightRatio = maxHeight / originalHeight
+                  const scale = Math.min(1, widthRatio, heightRatio)
+                  const finalWidth = Math.floor(originalWidth * scale)
+                  const finalHeight = Math.floor(originalHeight * scale)
+                  const position = await app.outerPosition()
+                  const webvie = await WebviewWindow.getByLabel(label)
+                  if (webvie) {
+                    await webvie.show()
+                    await webvie.unminimize()
+                    await webvie.setFocus()
+                  } else {
+                    // 这里有bug 多次点击打开关闭图片会导致所有图片都无法打开
+                    new WebviewWindow(label, {
+                      url: image.base64,
+                      title: image.filename,
+                      x: position.x,
+                      y: position.y,
+                      width: finalWidth,
+                      height: finalHeight
+                    })
+                  }
+                }}
+              />
             </div>
           )
         })}
@@ -535,7 +647,7 @@ const Home = () => {
   return (
     <div className="font-sans flex flex-col gap-7 w-full h-[calc(100vh-30px)]">
       <Input {...{ ffmpeg, t, file, setFile }}></Input>
-      <Control {...{ t, ffmpeg, file, setImages, state, setState, tasks }}></Control>
+      <Control {...{ t, ffmpeg, file, images, setImages, state, setState, tasks }}></Control>
       <ImagesBox {...{ images }}></ImagesBox>
     </div>
   )
