@@ -19,7 +19,7 @@ enum State {
   ready = "ready",
   Running = "running",
   Stopping = "stopping",
-  Saveing = "saveing",
+  Saving = "Saving",
   Over = "over"
 }
 
@@ -380,7 +380,7 @@ const Control = (props: ControlProps) => {
     }
     // windows
     try {
-      setState(State.Saveing)
+      setState(State.Saving)
       for (const image of images) {
         const path = folder + "\\" + image.filename
         const file = await fsopen(path, { write: true, create: true })
@@ -392,6 +392,8 @@ const Control = (props: ControlProps) => {
         }
         await file.write(array)
       }
+    } catch (error) {
+      console.error("Error saving images:", error)
     } finally {
       setState(State.Over)
     }
@@ -547,7 +549,7 @@ const Control = (props: ControlProps) => {
               }
             }}
             size="small"
-            loading={state == State.Saveing}
+            loading={state == State.Saving}
             loadingPosition="end"
             variant="contained"
           >
@@ -599,7 +601,7 @@ const ImagesBox = (props: ImagesBox) => {
                 src={image.base64}
                 alt={image.filename}
                 onClick={async (event: React.MouseEvent<HTMLImageElement>) => {
-                  const label = "image-" + image.task_id
+                  const label = "view"
                   const element = event.target as HTMLImageElement
                   const originalWidth = element.naturalWidth
                   const originalHeight = element.naturalHeight
@@ -611,20 +613,21 @@ const ImagesBox = (props: ImagesBox) => {
                   const finalWidth = Math.floor(originalWidth * scale)
                   const finalHeight = Math.floor(originalHeight * scale)
                   const position = await app.outerPosition()
-                  const webvie = await WebviewWindow.getByLabel(label)
-                  if (webvie) {
-                    await webvie.show()
-                    await webvie.unminimize()
-                    await webvie.setFocus()
+                  const webview = await WebviewWindow.getByLabel(label)
+                  if (webview) {
+                    // 给view窗口发送最新图片的消息
+                    await webview.show()
+                    await webview.unminimize()
+                    await webview.setFocus()
                   } else {
-                    // 这里有bug 多次点击打开关闭图片会导致所有图片都无法打开
                     new WebviewWindow(label, {
                       url: image.base64,
-                      title: image.filename,
                       x: position.x,
                       y: position.y,
                       width: finalWidth,
-                      height: finalHeight
+                      height: finalHeight,
+                      decorations: false,
+                      dragDropEnabled: true
                     })
                   }
                 }}
