@@ -52,7 +52,8 @@ export const useImageStore = create<ImageStore>((_set, get) => ({
         new_images.push(image)
       }
     }
-    _set({ images: new_images })
+    const sorted = new_images.sort((a, b) => a.filename.localeCompare(b.filename))
+    _set({ images: sorted })
   },
   remove: (image: Image) => {
     const prev = get().images

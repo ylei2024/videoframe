@@ -19,10 +19,9 @@ const app = getCurrentWebviewWindow()
 
 enum State {
   ready = "ready",
-  Running = "running",
-  Stopping = "stopping",
-  Saving = "Saving",
-  Over = "over"
+  saving = "saving",
+  running = "running",
+  stopping = "stopping",
 }
 
 async function load(ffmpeg: MutableRefObject<FFmpeg>) {
@@ -39,7 +38,6 @@ async function load(ffmpeg: MutableRefObject<FFmpeg>) {
 
 interface Task {
   id: number
-  setState: Dispatch<SetStateAction<State>>
   ffmpeg: MutableRefObject<FFmpeg>
   filename: string
   ss: number
@@ -48,8 +46,7 @@ interface Task {
   state: "running" | "completed" | "ready"
 }
 async function exec(task: Task, extendImages: (append: Image[]) => void) {
-  const { id, setState, ffmpeg, filename, ss, interval, controller } = task
-  setState(State.Running)
+  const { id, ffmpeg, filename, ss, interval, controller } = task
   try {
     if (!ffmpeg.current.loaded) {
       await load(ffmpeg)
@@ -95,10 +92,8 @@ async function exec(task: Task, extendImages: (append: Image[]) => void) {
       }
     }
     extendImages(append)
-  } catch (error) {
-    console.log(error)
-  } finally {
-    setState(State.Over)
+  } catch (e) {
+    console.log(e)
   }
 }
 
@@ -136,8 +131,8 @@ const Input = (props: InputProps) => {
             if (file && ffmpeg.current.loaded) {
               try {
                 await ffmpeg.current.unmount("/data/")
-              } catch (error) {
-                console.log(error)
+              } catch (e) {
+                console.log(e)
               }
             }
             setFile(null)
@@ -211,7 +206,7 @@ const Control = (props: ControlProps) => {
   const clearImages = useImageStore((state) => state.clear)
   const extendImages = useImageStore((state) => state.extend)
   const changePosition = (value: string, type: string) => {
-    if (state == State.Stopping || state == State.Running) {
+    if (state == State.stopping || state == State.running) {
       return
     }
     if (type == "hour") {
@@ -247,7 +242,7 @@ const Control = (props: ControlProps) => {
     if (task_id) {
       tasks.current[task_id].controller.abort()
       while (true) {
-        if (state == State.Over) {
+        if (state == State.ready) {
           break
         }
         await wait(1000)
@@ -293,10 +288,11 @@ const Control = (props: ControlProps) => {
     }
   }, [file])
   const click = async () => {
-    if (state == State.Running) {
-      setState(State.Stopping)
+    if (state == State.running) {
+      setState(State.stopping)
       await stop()
     } else if (state == State.ready && file) {
+      setState(State.running)
       if (tasks.current.length === 0) {
         let ss = parseInt(hour) * 60 * 60 + parseInt(minute) * 60 + parseInt(second)
         const next_tasks: Task[] = []
@@ -306,7 +302,6 @@ const Control = (props: ControlProps) => {
           const remaining = duration - ss
           next_tasks.push({
             id: id,
-            setState: setState,
             ffmpeg: ffmpeg,
             filename: file.name,
             ss: ss,
@@ -320,25 +315,23 @@ const Control = (props: ControlProps) => {
         tasks.current = next_tasks
       }
       for (let i = 0; i < tasks.current.length; i++) {
-        if (tasks.current[i].state === "ready") {
-          tasks.current[i].state = "running"
-          await exec(tasks.current[i], extendImages)
-          if (tasks.current[i].controller.signal.aborted) {
-            tasks.current[i].state = "ready"
-            tasks.current[i].controller = new AbortController()
-            break
-          } else {
-            tasks.current[i].state = "completed"
-          }
+        tasks.current[i].state = "running"
+        await exec(tasks.current[i], extendImages)
+        if (tasks.current[i].controller.signal.aborted) {
+          tasks.current[i].state = "ready"
+          tasks.current[i].controller = new AbortController()
+          break
+        } else {
+          tasks.current[i].state = "completed"
         }
       }
     }
-    if (state != State.Stopping) {
+    if (state != State.stopping) {
       setState(State.ready)
     }
   }
   const save = async () => {
-    if (state == State.Running || state == State.Stopping) {
+    if (state == State.running || state == State.stopping) {
       return
     }
     const folder = await open({
@@ -349,6 +342,7 @@ const Control = (props: ControlProps) => {
     if (folder === null) {
       return
     }
+    setError("")
     const dirs = await readDir(folder)
     if (dirs.length > 0) {
       for (const dir of dirs) {
@@ -357,13 +351,9 @@ const Control = (props: ControlProps) => {
           return
         }
       }
-      return
-    } else if (error) {
-      setError("")
     }
-    // windows
     try {
-      setState(State.Saving)
+      setState(State.saving)
       for (const image of images) {
         const path = folder + "\\" + image.filename
         const file = await fsopen(path, { write: true, create: true })
@@ -375,10 +365,10 @@ const Control = (props: ControlProps) => {
         }
         await file.write(array)
       }
-    } catch (error) {
-      console.error("Error saving images:", error)
+    } catch (e) {
+      console.log("Error saving images:", e)
     } finally {
-      setState(State.Over)
+      setState(State.ready)
     }
   }
   return (
@@ -532,7 +522,7 @@ const Control = (props: ControlProps) => {
               }
             }}
             size="small"
-            loading={state == State.Saving}
+            loading={state == State.saving}
             loadingPosition="end"
             variant="contained"
           >
@@ -550,15 +540,11 @@ const Control = (props: ControlProps) => {
               }
             }}
             size="small"
-            loading={state == State.Running || state == State.Stopping}
+            loading={state == State.running || state == State.stopping}
             loadingPosition="end"
             variant="contained"
           >
-            {state == State.ready || state == State.Over
-              ? t("home.run")
-              : state == State.Running
-                ? t("home.running")
-                : t("home.stopping")}
+            {state == State.ready ? t("home.run") : state == State.running ? t("home.running") : t("home.stopping")}
           </Button>
         </div>
       </div>
@@ -613,7 +599,7 @@ const ImagesBox = () => {
                   if (webview) {
                     // TODO 这里有问题换一种做法
                     await webview.emit("send-image-index", { data: index })
-                    await webview.emit("send-images", {data: images})
+                    await webview.emit("send-images", { data: images })
                     await webview.show()
                     await webview.unminimize()
                     await webview.setFocus()
