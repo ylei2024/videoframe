@@ -13,6 +13,8 @@ import { getCurrentWebviewWindow } from "@tauri-apps/api/webviewWindow"
 import HighlightOffRoundedIcon from "@mui/icons-material/HighlightOffRounded"
 import { useState, useRef, Dispatch, SetStateAction, MutableRefObject, useEffect } from "react"
 
+import { Image, useImageStore } from "../store"
+
 const app = getCurrentWebviewWindow()
 
 enum State {
@@ -21,12 +23,6 @@ enum State {
   Stopping = "stopping",
   Saving = "Saving",
   Over = "over"
-}
-
-interface Image {
-  task_id: number
-  filename: string
-  base64: string
 }
 
 async function load(ffmpeg: MutableRefObject<FFmpeg>) {
@@ -49,11 +45,10 @@ interface Task {
   ss: number
   interval: number
   controller: AbortController
-  setImages: Dispatch<SetStateAction<Image[]>>
   state: "running" | "completed" | "ready"
 }
-async function exec(task: Task) {
-  const { id, setState, ffmpeg, filename, ss, interval, controller, setImages } = task
+async function exec(task: Task, extendImages: (append: Image[]) => void) {
+  const { id, setState, ffmpeg, filename, ss, interval, controller } = task
   setState(State.Running)
   try {
     if (!ffmpeg.current.loaded) {
@@ -99,17 +94,7 @@ async function exec(task: Task) {
         await ffmpeg.current.deleteFile(image_path)
       }
     }
-    setImages((prev) => {
-      const exist = new Set(prev.map((i) => `${i.task_id}-${i.filename}`))
-      const new_images = [...prev]
-      for (const image of append) {
-        const key = `${image.task_id}-${image.filename}`
-        if (!exist.has(key)) {
-          new_images.push(image)
-        }
-      }
-      return new_images
-    })
+    extendImages(append)
   } catch (error) {
     console.log(error)
   } finally {
@@ -118,8 +103,8 @@ async function exec(task: Task) {
 }
 
 interface InputProps {
-  ffmpeg: MutableRefObject<FFmpeg>
   t: TFunction<"translation", undefined>
+  ffmpeg: MutableRefObject<FFmpeg>
   file: File | null
   setFile: Dispatch<SetStateAction<File | null>>
 }
@@ -208,15 +193,13 @@ interface ControlProps {
   t: TFunction<"translation", undefined>
   ffmpeg: MutableRefObject<FFmpeg>
   file: File | null
-  setImages: Dispatch<SetStateAction<Image[]>>
-  images: Image[]
   state: State
   setState: Dispatch<SetStateAction<State>>
   tasks: MutableRefObject<Task[]>
 }
 const Control = (props: ControlProps) => {
   const interval = 60 * 15
-  const { t, ffmpeg, file, images, setImages, state, setState, tasks } = props
+  const { t, ffmpeg, file, state, setState, tasks } = props
   const [error, setError] = useState<string>("")
   const [hour, setHour] = useState<string>("00")
   const [minute, setMinute] = useState<string>("00")
@@ -224,6 +207,9 @@ const Control = (props: ControlProps) => {
   const [duration, setDuration] = useState<number>(0)
   const [position, setPosition] = useState<number>(0)
   const [parsing_video, setParsingVideo] = useState<boolean>(false)
+  const images = useImageStore((state) => state.images)
+  const clearImages = useImageStore((state) => state.clear)
+  const extendImages = useImageStore((state) => state.extend)
   const changePosition = (value: string, type: string) => {
     if (state == State.Stopping || state == State.Running) {
       return
@@ -247,7 +233,7 @@ const Control = (props: ControlProps) => {
     } else {
       setPosition(parseInt(hour) * 60 * 60 + parseInt(minute) * 60 + parseInt(second))
     }
-    setImages([])
+    clearImages()
     tasks.current = []
   }
   const stop = async () => {
@@ -302,9 +288,7 @@ const Control = (props: ControlProps) => {
     run()
     return () => {
       stop().then(() => {})
-      setImages([])
       setDuration(0)
-      tasks.current = []
       changePosition("0", "position")
     }
   }, [file])
@@ -328,7 +312,6 @@ const Control = (props: ControlProps) => {
             ss: ss,
             interval: remaining >= interval ? interval : remaining,
             controller: controller,
-            setImages: setImages,
             state: "ready"
           })
           id += 1
@@ -339,7 +322,7 @@ const Control = (props: ControlProps) => {
       for (let i = 0; i < tasks.current.length; i++) {
         if (tasks.current[i].state === "ready") {
           tasks.current[i].state = "running"
-          await exec(tasks.current[i])
+          await exec(tasks.current[i], extendImages)
           if (tasks.current[i].controller.signal.aborted) {
             tasks.current[i].state = "ready"
             tasks.current[i].controller = new AbortController()
@@ -583,20 +566,33 @@ const Control = (props: ControlProps) => {
   )
 }
 
-interface ImagesBox {
-  images: Image[]
-}
-const ImagesBox = (props: ImagesBox) => {
-  const { images } = props
+const ImagesBox = () => {
+  const images = useImageStore((state) => state.images)
+  const removeImage = useImageStore((state) => state.remove)
   return (
     <div className="h-8/10 w-full scrollbar-none overflow-y-scroll flex items-center justify-center">
       <div className="w-7/8 h-full grid grid-cols-3 gap-4">
-        {images.map((image) => {
+        {images.map((image, index) => {
           return (
             <div
-              className="transition-transform duration-300 ease-in-out hover:scale-102"
+              className="relative transition-transform duration-300 ease-in-out hover:scale-102 group cursor-pointer"
               key={`${image.task_id}-${image.filename}`}
             >
+              <div
+                onClick={() => {
+                  removeImage(image)
+                }}
+                className="absolute top-0.5 right-1 z-10 opacity-0 group-hover:opacity-100 transition-opacity duration-200"
+              >
+                <HighlightOffRoundedIcon
+                  sx={{
+                    fontSize: 19,
+                    color: "rgba(255, 255, 255, 1)",
+                    backgroundColor: "rgba(0, 0, 0, 0.4)",
+                    borderRadius: "50%"
+                  }}
+                ></HighlightOffRoundedIcon>
+              </div>
               <img
                 src={image.base64}
                 alt={image.filename}
@@ -613,15 +609,17 @@ const ImagesBox = (props: ImagesBox) => {
                   const finalWidth = Math.floor(originalWidth * scale)
                   const finalHeight = Math.floor(originalHeight * scale)
                   const position = await app.outerPosition()
-                  const webview = await WebviewWindow.getByLabel(label)
+                  let webview = await WebviewWindow.getByLabel(label)
                   if (webview) {
-                    // 给view窗口发送最新图片的消息
+                    // TODO 这里有问题换一种做法
+                    await webview.emit("send-image-index", { data: index })
+                    await webview.emit("send-images", {data: images})
                     await webview.show()
                     await webview.unminimize()
                     await webview.setFocus()
                   } else {
                     new WebviewWindow(label, {
-                      url: image.base64,
+                      url: "/view",
                       x: position.x,
                       y: position.y,
                       width: finalWidth,
@@ -644,14 +642,13 @@ const Home = () => {
   const { t } = useTranslation()
   const tasks = useRef<Task[]>([])
   const ffmpeg = useRef(new FFmpeg())
-  const [images, setImages] = useState<Image[]>([])
   const [file, setFile] = useState<File | null>(null)
   const [state, setState] = useState<State>(State.ready)
   return (
     <div className="font-sans flex flex-col gap-7 w-full h-[calc(100vh-30px)]">
-      <Input {...{ ffmpeg, t, file, setFile }}></Input>
-      <Control {...{ t, ffmpeg, file, images, setImages, state, setState, tasks }}></Control>
-      <ImagesBox {...{ images }}></ImagesBox>
+      <Input {...{ t, ffmpeg, file, setFile }}></Input>
+      <Control {...{ t, ffmpeg, file, state, setState, tasks }}></Control>
+      <ImagesBox></ImagesBox>
     </div>
   )
 }

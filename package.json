@@ -28,8 +28,10 @@
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
     "react-i18next": "^15.4.1",
+    "react-router-dom": "^7.6.2",
     "tailwindcss": "^4.1.4",
-    "tauri-plugin-locale-api": "^2.0.1"
+    "tauri-plugin-locale-api": "^2.0.1",
+    "zustand": "^5.0.5"
   },
   "devDependencies": {
     "@tauri-apps/cli": "^2",

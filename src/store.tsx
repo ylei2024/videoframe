@@ -1,4 +1,5 @@
 import i18n from "./locales"
+import { create } from "zustand"
 import { Store } from "@tauri-apps/plugin-store"
 import { getLocale } from "tauri-plugin-locale-api"
 
@@ -25,5 +26,40 @@ class VideoFrameStore {
 }
 
 const store = new VideoFrameStore()
+
+export interface Image {
+  task_id: number
+  filename: string
+  base64: string
+}
+interface ImageStore {
+  images: Image[]
+  set: (images: Image[]) => void
+  extend: (append: Image[]) => void
+  remove: (image: Image) => void
+  clear: () => void
+}
+export const useImageStore = create<ImageStore>((_set, get) => ({
+  images: [],
+  set: (images) => _set({ images }),
+  extend: (append) => {
+    const prev = get().images
+    const exist = new Set(prev.map((i) => `${i.task_id}-${i.filename}`))
+    const new_images = [...prev]
+    for (const image of append) {
+      const key = `${image.task_id}-${image.filename}`
+      if (!exist.has(key)) {
+        new_images.push(image)
+      }
+    }
+    _set({ images: new_images })
+  },
+  remove: (image: Image) => {
+    const prev = get().images
+    const new_images = prev.filter((i) => i.task_id !== image.task_id || i.filename !== image.filename)
+    _set({ images: new_images })
+  },
+  clear: () => _set({ images: [] })
+}))
 
 export default store

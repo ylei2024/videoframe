@@ -1,12 +1,12 @@
 import "../styles.css"
 import { Button, ButtonGroup } from "@mui/material"
-import { getCurrentWebviewWindow } from "@tauri-apps/api/webviewWindow"
+import { WebviewWindow } from "@tauri-apps/api/webviewWindow"
 import { CloseRounded, HorizontalRuleRounded } from "@mui/icons-material"
 
-const appWindow = getCurrentWebviewWindow()
-
-function Top() {
-  const minWidth = 40
+interface TopProps {
+  app: WebviewWindow
+}
+function Top(props: TopProps) {
   return (
     <div data-tauri-drag-region className="flex justify-end h-[30px]">
       <ButtonGroup
@@ -23,10 +23,11 @@ function Top() {
         <Button
           size="small"
           sx={{
-            minWidth,
+            "width": 15,
+            "height": 25,
             ":hover": { bgcolor: "#242424" }
           }}
-          onClick={() => appWindow.hide()}
+          onClick={() => props.app.hide()}
         >
           <HorizontalRuleRounded
             fontSize="small"
@@ -38,10 +39,11 @@ function Top() {
         <Button
           size="small"
           sx={{
-            minWidth,
+            "width": 15,
+            "height": 25,
             ":hover": { bgcolor: "#ff000090" }
           }}
-          onClick={() => appWindow.close()}
+          onClick={() => props.app.close()}
         >
           <CloseRounded
             fontSize="small"
