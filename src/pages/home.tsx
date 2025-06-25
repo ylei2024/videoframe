@@ -11,7 +11,7 @@ import CircularProgress from "@mui/material/CircularProgress"
 import { open as fsopen, readDir } from "@tauri-apps/plugin-fs"
 import { getCurrentWebviewWindow } from "@tauri-apps/api/webviewWindow"
 import HighlightOffRoundedIcon from "@mui/icons-material/HighlightOffRounded"
-import { useState, useRef, Dispatch, SetStateAction, MutableRefObject, useEffect } from "react"
+import { useState, useRef, Dispatch, SetStateAction, MutableRefObject, useEffect, useCallback } from "react"
 
 import { Image, useImageStore } from "../store"
 
@@ -21,11 +21,12 @@ enum State {
   ready = "ready",
   saving = "saving",
   running = "running",
-  stopping = "stopping",
+  stopping = "stopping"
 }
 
-async function load(ffmpeg: MutableRefObject<FFmpeg>) {
-  if (!ffmpeg.current.loaded) {
+async function load(ffmpeg: MutableRefObject<FFmpeg | null>) {
+  if (ffmpeg.current === null || !ffmpeg.current?.loaded) {
+    ffmpeg.current = new FFmpeg()
     await ffmpeg.current.load({
       coreURL: await toBlobURL("./ffmpeg-core.js", "text/javascript"),
       wasmURL: await toBlobURL("./ffmpeg-core.wasm", "application/wasm"),
@@ -38,7 +39,7 @@ async function load(ffmpeg: MutableRefObject<FFmpeg>) {
 
 interface Task {
   id: number
-  ffmpeg: MutableRefObject<FFmpeg>
+  ffmpeg: MutableRefObject<FFmpeg | null>
   filename: string
   ss: number
   interval: number
@@ -48,12 +49,12 @@ interface Task {
 async function exec(task: Task, extendImages: (append: Image[]) => void) {
   const { id, ffmpeg, filename, ss, interval, controller } = task
   try {
-    if (!ffmpeg.current.loaded) {
+    if (!ffmpeg.current) {
       await load(ffmpeg)
     }
     const target_path = "/data/" + filename
     const signal = controller.signal
-    await ffmpeg.current.exec(
+    await ffmpeg.current?.exec(
       [
         "-skip_frame",
         "nokey",
@@ -70,12 +71,12 @@ async function exec(task: Task, extendImages: (append: Image[]) => void) {
       undefined,
       { signal }
     )
-    const output = await ffmpeg.current.listDir("output")
+    const output = (await ffmpeg.current?.listDir("output")) || []
     const append: Image[] = []
     for (const { name, isDir } of output) {
       if (!isDir) {
         const image_path = "/output/" + name
-        const file = await ffmpeg.current.readFile(image_path)
+        const file = await ffmpeg.current?.readFile(image_path)
         if (file instanceof Uint8Array) {
           let binary = ""
           const len = file.byteLength
@@ -88,7 +89,7 @@ async function exec(task: Task, extendImages: (append: Image[]) => void) {
             base64: `data:image/png;base64,${window.btoa(binary)}`
           })
         }
-        await ffmpeg.current.deleteFile(image_path)
+        await ffmpeg.current?.deleteFile(image_path)
       }
     }
     extendImages(append)
@@ -99,7 +100,7 @@ async function exec(task: Task, extendImages: (append: Image[]) => void) {
 
 interface InputProps {
   t: TFunction<"translation", undefined>
-  ffmpeg: MutableRefObject<FFmpeg>
+  ffmpeg: MutableRefObject<FFmpeg | null>
   file: File | null
   setFile: Dispatch<SetStateAction<File | null>>
 }
@@ -128,12 +129,8 @@ const Input = (props: InputProps) => {
         <div
           className="h-full w-2/124 flex justify-center items-center px-4 cursor-pointer"
           onClick={async () => {
-            if (file && ffmpeg.current.loaded) {
-              try {
-                await ffmpeg.current.unmount("/data/")
-              } catch (e) {
-                console.log(e)
-              }
+            if (file && ffmpeg.current?.loaded) {
+              await ffmpeg.current?.unmount("/data")
             }
             setFile(null)
             if (input_ref.current) {
@@ -186,7 +183,7 @@ const Input = (props: InputProps) => {
 
 interface ControlProps {
   t: TFunction<"translation", undefined>
-  ffmpeg: MutableRefObject<FFmpeg>
+  ffmpeg: MutableRefObject<FFmpeg | null>
   file: File | null
   state: State
   setState: Dispatch<SetStateAction<State>>
@@ -252,17 +249,18 @@ const Control = (props: ControlProps) => {
   }
   useEffect(() => {
     const run = async () => {
-      if (!file) {
-        return
-      }
       setParsingVideo(true)
       try {
+        if (!file) {
+          await ffmpeg.current?.unmount("/data")
+          return
+        }
         await load(ffmpeg)
         const target_path = "/data/" + file.name
         // https://github.com/ffmpegwasm/ffmpeg.wasm/issues/823
-        await ffmpeg.current.exec(["-i", "not-found"])
-        await ffmpeg.current.mount(FFFSType.WORKERFS, { files: [file] }, "/data")
-        await ffmpeg.current.ffprobe([
+        await ffmpeg.current?.exec(["-i", "not-found"])
+        await ffmpeg.current?.mount(FFFSType.WORKERFS, { files: [file] }, "/data")
+        await ffmpeg.current?.ffprobe([
           "-v",
           "error",
           "-show_entries",
@@ -273,9 +271,12 @@ const Control = (props: ControlProps) => {
           "-o",
           "output.txt"
         ])
-        const data = await ffmpeg.current.readFile("output.txt")
+        const data = await ffmpeg.current?.readFile("output.txt")
         const text = typeof data === "string" ? data : new TextDecoder("utf-8").decode(data)
         setDuration(Math.trunc(parseFloat(text)))
+      } catch (e) {
+        ffmpeg.current = null
+        await load(ffmpeg)
       } finally {
         setParsingVideo(false)
       }
@@ -553,8 +554,47 @@ const Control = (props: ControlProps) => {
 }
 
 const ImagesBox = () => {
+  const label = "view"
+  const view = useRef<WebviewWindow | null>(null)
   const images = useImageStore((state) => state.images)
   const removeImage = useImageStore((state) => state.remove)
+  const create_window = async (index: number) => {
+    const position = await app.outerPosition()
+    return new WebviewWindow(label, {
+      url: "/view?index=" + index,
+      x: position.x,
+      y: position.y,
+      minWidth: 800,
+      minHeight: 500,
+      decorations: false,
+      dragDropEnabled: true
+    })
+  }
+  const sendImage = useCallback(
+    async (index: number) => {
+      if (view.current && index >= 0 && index < images.length) {
+        await app.emitTo(label, "view-send-image", {
+          index: index,
+          length: images.length,
+          base64: images[index].base64
+        })
+        await view.current.show()
+        await view.current.unminimize()
+        await view.current.setFocus()
+      }
+    },
+    [images]
+  )
+  useEffect(() => {
+    const listen = async () => {
+      await app.listen("view-request-image", async (event: { payload: number }) => {
+        if (view.current) {
+          await sendImage(event.payload)
+        }
+      })
+    }
+    listen()
+  }, [sendImage])
   return (
     <div className="h-8/10 w-full scrollbar-none overflow-y-scroll flex items-center justify-center">
       <div className="w-7/8 h-full grid grid-cols-3 gap-4">
@@ -582,37 +622,11 @@ const ImagesBox = () => {
               <img
                 src={image.base64}
                 alt={image.filename}
-                onClick={async (event: React.MouseEvent<HTMLImageElement>) => {
-                  const label = "view"
-                  const element = event.target as HTMLImageElement
-                  const originalWidth = element.naturalWidth
-                  const originalHeight = element.naturalHeight
-                  const maxWidth = window.innerWidth * 0.8
-                  const maxHeight = window.innerHeight * 0.8
-                  const widthRatio = maxWidth / originalWidth
-                  const heightRatio = maxHeight / originalHeight
-                  const scale = Math.min(1, widthRatio, heightRatio)
-                  const finalWidth = Math.floor(originalWidth * scale)
-                  const finalHeight = Math.floor(originalHeight * scale)
-                  const position = await app.outerPosition()
-                  let webview = await WebviewWindow.getByLabel(label)
-                  if (webview) {
-                    // TODO 这里有问题换一种做法
-                    await webview.emit("send-image-index", { data: index })
-                    await webview.emit("send-images", { data: images })
-                    await webview.show()
-                    await webview.unminimize()
-                    await webview.setFocus()
+                onClick={async () => {
+                  if (view.current === null) {
+                    view.current = await create_window(index)
                   } else {
-                    new WebviewWindow(label, {
-                      url: "/view",
-                      x: position.x,
-                      y: position.y,
-                      width: finalWidth,
-                      height: finalHeight,
-                      decorations: false,
-                      dragDropEnabled: true
-                    })
+                    await sendImage(index)
                   }
                 }}
               />
@@ -627,7 +641,7 @@ const ImagesBox = () => {
 const Home = () => {
   const { t } = useTranslation()
   const tasks = useRef<Task[]>([])
-  const ffmpeg = useRef(new FFmpeg())
+  const ffmpeg = useRef<FFmpeg | null>()
   const [file, setFile] = useState<File | null>(null)
   const [state, setState] = useState<State>(State.ready)
   return (

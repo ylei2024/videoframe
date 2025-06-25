@@ -1,10 +1,10 @@
 import "../styles.css"
 import { Button, ButtonGroup } from "@mui/material"
-import { WebviewWindow } from "@tauri-apps/api/webviewWindow"
 import { CloseRounded, HorizontalRuleRounded } from "@mui/icons-material"
 
 interface TopProps {
-  app: WebviewWindow
+  hide: () => Promise<void>
+  close: () => Promise<void>
 }
 function Top(props: TopProps) {
   return (
@@ -27,7 +27,7 @@ function Top(props: TopProps) {
             "height": 25,
             ":hover": { bgcolor: "#242424" }
           }}
-          onClick={() => props.app.hide()}
+          onClick={props.hide}
         >
           <HorizontalRuleRounded
             fontSize="small"
@@ -43,7 +43,7 @@ function Top(props: TopProps) {
             "height": 25,
             ":hover": { bgcolor: "#ff000090" }
           }}
-          onClick={() => props.app.close()}
+          onClick={props.close}
         >
           <CloseRounded
             fontSize="small"

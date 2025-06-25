@@ -1,42 +1,75 @@
-import { UnlistenFn } from "@tauri-apps/api/event"
 import { useEffect, useRef, useState } from "react"
+import ArrowBackIosIcon from "@mui/icons-material/ArrowBackIos"
+import ArrowForwardIosIcon from "@mui/icons-material/ArrowForwardIos"
 import { getCurrentWebviewWindow } from "@tauri-apps/api/webviewWindow"
 
 import Top from "../layout/top"
-import { Image } from "../store"
 
 const app = getCurrentWebviewWindow()
 
+interface Image {
+  index: number
+  length: number
+  base64: string
+}
 const ImageView = () => {
-  const unlisten = useRef<UnlistenFn[]>([])
-  const [index, setIndex] = useState<number>(0)
-  const [images, setImages] = useState<Image[]>([])
+  const top_ref = useRef<HTMLDivElement>(null)
+  const [image, setImage] = useState<Image | null>(null)
   useEffect(() => {
-    app
-      .listen("send-images", (event) => {
-        const { data } = event.payload as { data: Image[] }
-        setImages(data)
+    const listen = async () => {
+      await app.listen("view-send-image", (event) => {
+        const data = event.payload as Image
+        setImage(data)
       })
-      .then((fn) => {
-        unlisten.current = [...unlisten.current, fn]
-      })
-    app.listen("send-image-index", (event) => {
-      console.log(event)
-      const { data } = event.payload as { data: number }
-      setIndex(data)
-    }).then((fn) => {
-      unlisten.current = [...unlisten.current, fn]
-    })
-    return () => {
-      for (const fn of unlisten.current) {
-        fn()
+      const params = new URLSearchParams(window.location.search)
+      const index = Number(params.get("index"))
+      if (!isNaN(index)) {
+        await app.emitTo("main", "view-request-image", index)
       }
     }
+    listen()
   }, [])
+  const click = async (offset: number) => {
+    await app.emitTo("main", "view-request-image", image != null ? image.index + offset : 0)
+  }
   return (
-    <div className="bg-[rgb(17,17,17)]">
-      <Top app={app}></Top>
-      <div>{index < images.length ? <img src={images[index].base64}></img> : <></>}</div>
+    <div className="bg-[rgb(17,17,17)] h-screen w-screen overflow-hidden">
+      <div ref={top_ref}>
+        <Top hide={async () => await app.hide()} close={async () => await app.hide()} />
+      </div>
+      <div className="relative group">
+        <img src={image?.base64} alt="" className="w-full h-1/1 object-cover" />
+        {image != null && image.index > 0 ? (
+          <div
+            onClick={async () => {
+              click(-1)
+            }}
+            className="absolute top-1/2 left-4 transform -translate-y-1/2
+               hidden group-hover:flex items-center justify-center
+               w-10 h-10 rounded-full bg-black bg-opacity-60
+               cursor-pointer transition-opacity duration-300 z-10"
+          >
+            <ArrowBackIosIcon style={{ fontSize: 20, color: "white" }} />
+          </div>
+        ) : (
+          <></>
+        )}
+        {image != null && image.index < image.length - 1 ? (
+          <div
+            onClick={async () => {
+              click(1)
+            }}
+            className="absolute top-1/2 right-4 transform -translate-y-1/2
+               hidden group-hover:flex items-center justify-center
+               w-10 h-10 rounded-full bg-black bg-opacity-60
+               cursor-pointer transition-opacity duration-300 z-10"
+          >
+            <ArrowForwardIosIcon style={{ fontSize: 20, color: "white" }} />
+          </div>
+        ) : (
+          <></>
+        )}
+      </div>
     </div>
   )
 }
