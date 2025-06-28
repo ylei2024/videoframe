@@ -1,11 +1,9 @@
 name: Tauri Windows Release
 
-on: push
-
-# on:
-#   push:
-#     tags:
-#       - 'v*'  # 触发如 v1.0.0 标签
+on:
+  push:
+    tags:
+      - 'v*'  # 触发如 v1.0.0 标签
 
 jobs:
   publish-tauri:
@@ -54,8 +52,8 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
           tagName: app-v__VERSION__ # the action automatically replaces \_\_VERSION\_\_ with the app version.
-          releaseName: 'App v__VERSION__'
-          releaseBody: 'See the assets to download this version and install.'
-          releaseDraft: true
+          releaseName: 'VideoFrame v__VERSION__'
+          releaseBody: ''
+          releaseDraft: false
           prerelease: false
           args: ${{ matrix.args }}
