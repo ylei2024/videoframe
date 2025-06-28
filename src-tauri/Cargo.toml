@@ -1,6 +1,6 @@
 [package]
 name = "videoframe"
-version = "0.1.0"
+version = "1.0.1"
 description = "A Tauri App"
 authors = ["yuwu"]
 edition = "2021"
