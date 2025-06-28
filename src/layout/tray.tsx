@@ -26,7 +26,7 @@ async function createTray(
   const options: TrayIconOptions = {
     id: TRAY_ID,
     menu,
-    icon: await resolveResource("icons/icon.ico"),
+    icon: await resolveResource("icons/32x32.png"),
     menuOnLeftClick: false,
     action: async (event: TrayIconEvent) => {
       if (event.type === "Click" && event.button === "Left") {

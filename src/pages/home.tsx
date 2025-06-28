@@ -641,7 +641,7 @@ const ImagesBox = () => {
 const Home = () => {
   const { t } = useTranslation()
   const tasks = useRef<Task[]>([])
-  const ffmpeg = useRef<FFmpeg | null>()
+  const ffmpeg = useRef<FFmpeg | null>(null)
   const [file, setFile] = useState<File | null>(null)
   const [state, setState] = useState<State>(State.ready)
   return (

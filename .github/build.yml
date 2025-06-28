@@ -1,0 +1,79 @@
+name: Tauri Windows Release
+
+on:
+  push:
+    tags:
+      - 'v*'  # 匹配 v1.0.0 这样的标签
+
+jobs:
+  create-release:
+    name: Create Release
+    runs-on: ubuntu-latest
+    outputs:
+      upload_url: ${{ steps.create_release.outputs.upload_url }}
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0  # 获取完整 Git 历史（包含标签）
+
+      - name: Get version from tag
+        id: get_version
+        run: echo "version=${GITHUB_REF#refs/tags/}" >> $GITHUB_OUTPUT
+
+      - name: Create GitHub Release
+        id: create_release
+        uses: actions/create-release@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          tag_name: ${{ github.ref }}
+          release_name: ${{ steps.get_version.outputs.version }}
+          draft: false
+          prerelease: false
+
+  build-windows:
+    name: Build for Windows
+    needs: create-release
+    runs-on: windows-latest  # 明确指定 Windows 环境
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Install Rust
+        uses: actions-rs/toolchain@v1
+        with:
+          toolchain: stable
+          target: x86_64-pc-windows-msvc  # 明确 Windows 目标平台
+          override: true
+
+      - name: Install Windows Build Tools
+        run: |
+          choco install -y visualstudio2022-workload-vctools
+          choco install -y windows-sdk-10.0
+
+      - name: Install Tauri CLI
+        run: npm install -g @tauri-apps/cli
+
+      - name: Install Project Dependencies
+        run: npm install
+
+      - name: Build Tauri (Windows)
+        run: npm run tauri build -- --target x86_64-pc-windows-msvc
+
+      - name: Upload Windows Artifacts
+        uses: actions/upload-release-asset@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          upload_url: ${{ needs.create-release.outputs.upload_url }}
+          asset_path: |
+            ./src-tauri/target/x86_64-pc-windows-msvc/release/bundle/msi/*.msi
+            ./src-tauri/target/x86_64-pc-windows-msvc/release/bundle/nsis/*.exe
+          asset_name: ${{ github.ref_name }}-windows.${{ endsWith(asset_path, '.msi') && 'msi' || 'exe' }}
+          asset_content_type: application/octet-stream
