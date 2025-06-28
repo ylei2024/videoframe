@@ -1,8 +1,20 @@
 # VideoFrame
 
-## 简介
+<div align="center">
+  <img src="docs/icon.png" alt="VideoFrame Logo" width="120">
+</div>
 
-VideoFrame 是一个轻量级的桌面应用程序，用于从视频文件中提取关键帧。它基于Tauri 2 技术构建，具有极小的安装包体积和简洁的用户界面。
+> VideoFrame 是一个轻量级的桌面应用程序，用于从视频文件中提取关键帧。它基于Tauri 2 技术构建，具有极小的安装包体积和简洁的用户界面。
+
+<div align="center">
+
+![TailwindCSS](https://img.shields.io/badge/TailwindCSS-3-38bdf8?logo=tailwindcss)
+![TypeScript](https://img.shields.io/badge/TypeScript-4.x-3178c6?logo=typescript)
+![GitHub Workflow Status](https://img.shields.io/github/actions/workflow/status/ylei2024/videoframe/build.yml)
+![License](https://img.shields.io/badge/License-MIT-green)
+
+
+</div>
 
 ## Overview
 ![Dashboard](docs/overview.png)
