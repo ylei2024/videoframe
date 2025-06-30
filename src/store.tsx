@@ -32,7 +32,7 @@ export interface Image {
   filename: string
   base64: string
 }
-interface ImageStore {
+export interface ImageStore {
   images: Image[]
   set: (images: Image[]) => void
   extend: (append: Image[]) => void
@@ -41,8 +41,8 @@ interface ImageStore {
 }
 export const useImageStore = create<ImageStore>((_set, get) => ({
   images: [],
-  set: (images) => _set({ images }),
-  extend: (append) => {
+  set: (images: Image[]) => _set({ images }),
+  extend: (append: Image[]) => {
     const prev = get().images
     const exist = new Set(prev.map((i) => `${i.task_id}-${i.filename}`))
     const new_images = [...prev]

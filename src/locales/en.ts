@@ -6,7 +6,7 @@ const en = {
   "home.stopping": "stopping",
   "home.select_video": "select",
   "home.video": "video",
-  "home.folder.tip": "File already exists in this directory",
+  "home.folder.tip": "File already exists in this directory"
 }
 
 export default en

@@ -1,6 +1,5 @@
 import { useEffect, useRef, useState } from "react"
-import ArrowBackIosIcon from "@mui/icons-material/ArrowBackIos"
-import ArrowForwardIosIcon from "@mui/icons-material/ArrowForwardIos"
+import ChevronRightIcon from "@mui/icons-material/ArrowForwardIos"
 import { getCurrentWebviewWindow } from "@tauri-apps/api/webviewWindow"
 
 import Top from "../layout/top"
@@ -46,10 +45,10 @@ const ImageView = () => {
             }}
             className="absolute top-1/2 left-4 transform -translate-y-1/2
                hidden group-hover:flex items-center justify-center
-               w-10 h-10 rounded-full bg-black bg-opacity-60
+               w-12 h-12 rounded-full bg-black bg-opacity-60
                cursor-pointer transition-opacity duration-300 z-10"
           >
-            <ArrowBackIosIcon style={{ fontSize: 20, color: "white" }} />
+            <ChevronRightIcon className="transform -scale-x-100" style={{ fontSize: 20, color: "white" }} />
           </div>
         ) : (
           <></>
@@ -61,10 +60,10 @@ const ImageView = () => {
             }}
             className="absolute top-1/2 right-4 transform -translate-y-1/2
                hidden group-hover:flex items-center justify-center
-               w-10 h-10 rounded-full bg-black bg-opacity-60
+               w-12 h-12 rounded-full bg-black bg-opacity-60
                cursor-pointer transition-opacity duration-300 z-10"
           >
-            <ArrowForwardIosIcon style={{ fontSize: 20, color: "white" }} />
+            <ChevronRightIcon style={{ fontSize: 20, color: "white" }} />
           </div>
         ) : (
           <></>

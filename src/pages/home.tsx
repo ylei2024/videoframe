@@ -11,9 +11,10 @@ import CircularProgress from "@mui/material/CircularProgress"
 import { open as fsopen, readDir } from "@tauri-apps/plugin-fs"
 import { getCurrentWebviewWindow } from "@tauri-apps/api/webviewWindow"
 import HighlightOffRoundedIcon from "@mui/icons-material/HighlightOffRounded"
-import { useState, useRef, Dispatch, SetStateAction, MutableRefObject, useEffect, useCallback } from "react"
+import { useState, useRef, Dispatch, SetStateAction, MutableRefObject, useEffect } from "react"
 
-import { Image, useImageStore } from "../store"
+import { Image, ImageStore, useImageStore } from "../store"
+import { UnlistenFn } from "@tauri-apps/api/event"
 
 const app = getCurrentWebviewWindow()
 
@@ -556,8 +557,9 @@ const Control = (props: ControlProps) => {
 const ImagesBox = () => {
   const label = "view"
   const view = useRef<WebviewWindow | null>(null)
-  const images = useImageStore((state) => state.images)
-  const removeImage = useImageStore((state) => state.remove)
+  const unlisten_ref = useRef<UnlistenFn | null>(null)
+  const images = useImageStore((state: ImageStore) => state.images)
+  const removeImage = useImageStore((state: ImageStore) => state.remove)
   const create_window = async (index: number) => {
     const position = await app.outerPosition()
     return new WebviewWindow(label, {
@@ -570,31 +572,37 @@ const ImagesBox = () => {
       dragDropEnabled: true
     })
   }
-  const sendImage = useCallback(
-    async (index: number) => {
-      if (view.current && index >= 0 && index < images.length) {
-        await app.emitTo(label, "view-send-image", {
-          index: index,
-          length: images.length,
-          base64: images[index].base64
-        })
-        await view.current.show()
-        await view.current.unminimize()
-        await view.current.setFocus()
-      }
-    },
-    [images]
-  )
+  const sendImage = async (index: number, images: Image[]) => {
+    if (view.current && index >= 0 && index < images.length) {
+      console.log(index)
+      console.log(images)
+      await app.emitTo(label, "view-send-image", {
+        index: index,
+        length: images.length,
+        base64: images[index].base64
+      })
+      await view.current.show()
+      await view.current.unminimize()
+      await view.current.setFocus()
+    }
+  }
   useEffect(() => {
     const listen = async () => {
-      await app.listen("view-request-image", async (event: { payload: number }) => {
+      return await app.listen("view-request-image", async (event: { payload: number }) => {
         if (view.current) {
-          await sendImage(event.payload)
+          await sendImage(event.payload, images)
         }
       })
     }
-    listen()
-  }, [sendImage])
+    listen().then((fn) => {
+      unlisten_ref.current = fn
+    })
+    return () => {
+      if (unlisten_ref.current) {
+        unlisten_ref.current()
+      }
+    }
+  }, [images])
   return (
     <div className="h-8/10 w-full scrollbar-none overflow-y-scroll flex items-center justify-center">
       <div className="w-7/8 h-full grid grid-cols-3 gap-4">
@@ -626,7 +634,7 @@ const ImagesBox = () => {
                   if (view.current === null) {
                     view.current = await create_window(index)
                   } else {
-                    await sendImage(index)
+                    await sendImage(index, images)
                   }
                 }}
               />

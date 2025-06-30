@@ -8,7 +8,7 @@ const TRAY_ID = "videoframe.tray"
 async function createTray(
   t: TFunction<"translation", undefined>,
   show: () => Promise<void>,
-  close: () => Promise<void>,
+  close: () => Promise<void>
 ) {
   const tray = await TrayIcon.getById(TRAY_ID)
   if (tray) {

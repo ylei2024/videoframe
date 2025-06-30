@@ -23,8 +23,8 @@ function Top(props: TopProps) {
         <Button
           size="small"
           sx={{
-            "width": 15,
-            "height": 25,
+            width: 15,
+            height: 25,
             ":hover": { bgcolor: "#242424" }
           }}
           onClick={props.hide}
@@ -39,8 +39,8 @@ function Top(props: TopProps) {
         <Button
           size="small"
           sx={{
-            "width": 15,
-            "height": 25,
+            width: 15,
+            height: 25,
             ":hover": { bgcolor: "#ff000090" }
           }}
           onClick={props.close}
